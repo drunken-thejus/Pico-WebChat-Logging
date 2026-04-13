@@ -2,5 +2,5 @@ fastapi
 uvicorn[standard]
 websockets
 python-multipart
-gorq
+groq
 supabase
