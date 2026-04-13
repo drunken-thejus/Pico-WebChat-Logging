@@ -1,6 +1,7 @@
 import logging
 from pythonjsonlogger import jsonlogger
-
+from logtail import LogtailHandler
+import os
 def setup_logger():
     logger = logging.getLogger()
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -21,3 +22,8 @@ def setup_logger():
 
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+    logtail_token=os.getenv("LOGTAIL_TOKEN")
+    if logtail_token:
+        logtail_handler = LogtailHandler(source_token=logtail_token)
+        logtail_handler.setFormatter(formatter)
+        logger.addHandler(logtail_handler)

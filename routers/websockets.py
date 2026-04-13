@@ -5,7 +5,7 @@ from tools.superdb import *
 import  json
 from tools.pico_ai import *
 import asyncio
-
+from  tools.log_ws_manager import log_manager
 import logging
 
 logger=logging.getLogger(__name__)
@@ -14,6 +14,14 @@ logger=logging.getLogger(__name__)
 
 router=APIRouter()
 
+@router.websocket("/ws/logs")
+async def websocket_logs(websocket: WebSocket):
+    await log_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()  # keep connection alive
+    except WebSocketDisconnect:
+        log_manager.disconnect(websocket)
 
 @router.websocket("/ws/{username}")
 async def websocket_endpoint(websocket: WebSocket, username: str):
