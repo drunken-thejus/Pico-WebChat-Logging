@@ -5,7 +5,6 @@ from tools.superdb import *
 import  json
 from tools.pico_ai import *
 import asyncio
-from  tools.log_ws_manager import log_manager
 import logging
 
 logger=logging.getLogger(__name__)
@@ -14,14 +13,6 @@ logger=logging.getLogger(__name__)
 
 router=APIRouter()
 
-@router.websocket("/ws/logs")
-async def websocket_logs(websocket: WebSocket):
-    await log_manager.connect(websocket)
-    try:
-        while True:
-            await websocket.receive_text()  # keep connection alive
-    except WebSocketDisconnect:
-        log_manager.disconnect(websocket)
 
 @router.websocket("/ws/{username}")
 async def websocket_endpoint(websocket: WebSocket, username: str):
@@ -32,7 +23,7 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
             "type": "error",
             "data": {"log": f'Username "{username}" is already taken. Please choose another.'}
         }))
-        logger.error("duplicate_username",extra={
+        logger.warning("duplicate_username",extra={
             "event":"duplicate_username",
             "endpoint":"/ws/",
             "username":username,
@@ -83,27 +74,32 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
                     }
                 })
                 asyncio.create_task(add_public_message(username=username,message=data.get("message","")))
-
-                try:
-                    for user, ws in list(active_connections.items()):
+                success=[]
+                failed=[]
+                for user, ws in list(active_connections.items()):
+                    try:
                         await ws.send_text(payload)
-                    logger.info("public_message_sent",
-                                     extra={
-                                     "event":"public_messsage_sent",
-                                     "sender":username,
-                                     "message_lenthg":len(data.get("message",""))
-
-                                     }
-                                     )
-                except Exception:
-                        logger.error("broadcast_public_message_error",
-                                     extra={
-                                     "event":"broadcast_public_message_error",
-                                     "username":username
-                                     },
-                                     exc_info=True
-                                     )
-
+                        success.append(user)
+                    except Exception:
+                        failed.append(user)
+                        logger.error("public_message_send_failed_to_user", extra={
+                            "event": "public_message_send_failed_to_user",
+                            "sender": username,
+                            "failed_receiver": user
+                        }, exc_info=True)
+                extra={
+                    "event":"public_message_broadcast_summary",
+                    "sender":username,
+                    "message_length":len(data.get("message","")),
+                    "total":len(active_connections),
+                    "success_count":len(success),
+                    "failed_count":len(failed),
+                    "success_users":success,
+                    "failed_users":failed}
+                if failed>0:
+                    logger.error("public_message_broadcast_summary",extra=extra)
+                else:
+                    logger.info("public_message_broadcast_summary",extra=extra)
             elif data.get("type") == "private":
                 receiver = data.get("receiver")
                 if receiver=="PICO":
@@ -160,12 +156,11 @@ async def websocket_endpoint(websocket: WebSocket, username: str):
                                          )
 
     except WebSocketDisconnect:
-        pass
-    finally:
         logger.info("user_disconnect",extra={
             "event":"user_disconnect",
             "username":username
         })
+    finally:
         active_connections.pop(username, None)
         await broadcast_user_list()
 
@@ -177,13 +172,28 @@ async def broadcast_user_list():
         "type": "active-users-list",
         "data": {"users": users}
     })
-    logger.info("broadcast_users_list",
-                extra={
-                    "event":"broadcast_users_list",
-                    "active_user_count":len(users)
-                })
-    for ws in list(active_connections.values()):
+    success=[]
+    failed=[]
+    for user,ws in list(active_connections.items()):
         try:
             await ws.send_text(payload)
+            success.append(user)
         except Exception:
-            pass
+            failed.append(user)
+            logger.warning("broadcast_user_list_send_failed", extra={
+        "event": "broadcast_user_list_send_failed",
+        "failed_user":user
+    }, exc_info=True)
+    extra={
+        "event":"active_users_list_send_summary",
+        "total":len(active_connections),
+        "success_count":len(success),
+        "failed_count":len(failed),
+        "success_users":success,
+        "failed_users":failed
+    }
+    if failed:
+        logger.error("active_users_list_send_summary",extra=extra)
+    else:
+        logger.info("active_users_list_send_summary",extra=extra)
+

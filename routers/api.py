@@ -66,6 +66,7 @@ async def private_history(request: Request, other_user: str):
 async def pico_history(request: Request):
     username = getattr(request.state, "username", None)
     try:
+        data=[]
         data = await get_pico(username)
         logger.info("pico_history_retrieved",
                     extra={
